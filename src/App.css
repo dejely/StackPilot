@@ -316,8 +316,8 @@ p {
 }
 
 .command-bar {
-  display: grid;
-  grid-template-columns: max-content max-content max-content max-content minmax(220px, 1fr);
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 10px;
   margin-top: 14px;
@@ -349,6 +349,7 @@ p {
 }
 
 .path-readout {
+  flex: 1 1 280px;
   min-width: 0;
   overflow: hidden;
   color: var(--muted-strong);
@@ -572,6 +573,23 @@ p {
   gap: 6px;
 }
 
+.checkbox-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.checkbox-field input {
+  width: 18px;
+  min-height: 18px;
+  flex: 0 0 auto;
+}
+
+.checkbox-field span {
+  color: var(--text);
+  font-weight: 750;
+}
+
 .logs {
   flex: 1;
   min-height: 390px;
@@ -599,6 +617,40 @@ p {
   display: flex;
   gap: 10px;
   margin-top: 14px;
+}
+
+.compat-readout {
+  display: grid;
+  gap: 8px;
+  margin: 18px 0 0;
+}
+
+.compat-readout div {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+  padding: 10px 12px;
+}
+
+.compat-readout dt {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.compat-readout dd {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 0.88rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .settings-section {
@@ -697,6 +749,15 @@ p {
   color: var(--log-text);
   font-family: var(--font-mono);
   padding: 12px;
+}
+
+.setup-modal {
+  display: grid;
+  gap: 12px;
+}
+
+.setup-modal p {
+  margin-top: 0;
 }
 
 .modal-actions {

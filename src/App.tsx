@@ -10,8 +10,13 @@ import {
 } from "./themes";
 
 const PROJECT_ROOT_KEY = "stackpilot.projectRoot";
+const PROJECT_NAME_KEY = "stackpilot.projectName";
+const PHPMYADMIN_URL_KEY = "stackpilot.phpMyAdminUrl";
+const SETUP_COMPLETE_KEY = "stackpilot.setupComplete";
 const THEME_KEY = "stackpilot.theme";
+const XAMPP_MODE_KEY = "stackpilot.xamppMode";
 const DEFAULT_PROJECT_ROOT = "/var/www/html";
+const DEFAULT_PHPMYADMIN_URL = "http://localhost/phpmyadmin";
 const POLL_INTERVAL_MS = 10_000;
 const LOG_LINE_COUNT = 80;
 
@@ -75,6 +80,26 @@ function getInitialProjectRoot() {
   return localStorage.getItem(PROJECT_ROOT_KEY) || DEFAULT_PROJECT_ROOT;
 }
 
+function getInitialProjectName() {
+  return localStorage.getItem(PROJECT_NAME_KEY) || "";
+}
+
+function getInitialPhpMyAdminUrl() {
+  return localStorage.getItem(PHPMYADMIN_URL_KEY) || DEFAULT_PHPMYADMIN_URL;
+}
+
+function getInitialXamppMode() {
+  return localStorage.getItem(XAMPP_MODE_KEY) === "true";
+}
+
+function getInitialDraftXamppMode() {
+  return getInitialSetupComplete() ? getInitialXamppMode() : true;
+}
+
+function getInitialSetupComplete() {
+  return localStorage.getItem(SETUP_COMPLETE_KEY) === "true";
+}
+
 function getInitialTheme(): ThemeId {
   const savedTheme = localStorage.getItem(THEME_KEY);
 
@@ -112,6 +137,34 @@ function getPreviewProjectServerStatus(): ProjectServerStatus {
 
 function isAbsolutePath(path: string) {
   return path.trim().startsWith("/");
+}
+
+function isHttpUrl(url: string) {
+  return url.startsWith("http://") || url.startsWith("https://");
+}
+
+function normalizeProjectName(name: string) {
+  return name.trim().replace(/^\/+|\/+$/g, "");
+}
+
+function buildXamppProjectUrl(name: string) {
+  const projectName = normalizeProjectName(name);
+
+  if (!projectName) {
+    return "http://localhost/";
+  }
+
+  const encodedProjectName = projectName
+    .split("/")
+    .filter(Boolean)
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+
+  return `http://localhost/${encodedProjectName}/`;
+}
+
+function joinPaths(root: string, child: string) {
+  return `${root.replace(/\/+$/g, "")}/${child.replace(/^\/+/g, "")}`;
 }
 
 function describeCommandResult(result: CommandResult) {
@@ -155,7 +208,17 @@ function App() {
   const [isActionRunning, setIsActionRunning] = useState(false);
   const [actionNotice, setActionNotice] = useState("");
   const [projectRoot, setProjectRoot] = useState(getInitialProjectRoot);
+  const [projectName, setProjectName] = useState(getInitialProjectName);
+  const [phpMyAdminUrl, setPhpMyAdminUrl] = useState(getInitialPhpMyAdminUrl);
+  const [xamppMode, setXamppMode] = useState(getInitialXamppMode);
   const [draftProjectRoot, setDraftProjectRoot] = useState(projectRoot);
+  const [draftProjectName, setDraftProjectName] = useState(projectName);
+  const [draftPhpMyAdminUrl, setDraftPhpMyAdminUrl] =
+    useState(phpMyAdminUrl);
+  const [draftXamppMode, setDraftXamppMode] = useState(
+    getInitialDraftXamppMode,
+  );
+  const [setupComplete, setSetupComplete] = useState(getInitialSetupComplete);
   const [settingsNotice, setSettingsNotice] = useState("");
   const [openError, setOpenError] = useState("");
   const [projectServer, setProjectServer] = useState<ProjectServerStatus>(
@@ -186,6 +249,16 @@ function App() {
   }, [statuses]);
 
   const selectedLabel = serviceLabels[selectedService];
+  const xamppProjectUrl = useMemo(
+    () => buildXamppProjectUrl(projectName),
+    [projectName],
+  );
+  const xamppProjectRoot = projectName
+    ? joinPaths(projectRoot, projectName)
+    : projectRoot;
+  const projectReadout = xamppMode
+    ? `${xamppProjectRoot} -> ${xamppProjectUrl}`
+    : projectRoot;
 
   const loadStatuses = useCallback(async () => {
     setIsStatusLoading(true);
@@ -346,8 +419,55 @@ function App() {
     setOpenError("");
 
     if (!isAbsolutePath(nextRoot)) {
-      setOpenError("Project root must be a non-empty absolute path.");
+      setOpenError(
+        xamppMode
+          ? "htdocs path must be a non-empty absolute path."
+          : "Project root must be a non-empty absolute path.",
+      );
       setPage("settings");
+      return;
+    }
+
+    if (xamppMode) {
+      const nextProjectName = normalizeProjectName(projectName);
+
+      if (!nextProjectName) {
+        setOpenError("Enter a project folder name for XAMPP mode.");
+        setPage("settings");
+        return;
+      }
+
+      try {
+        if (!runningInTauri) {
+          window.open(
+            buildXamppProjectUrl(nextProjectName),
+            "_blank",
+            "noopener,noreferrer",
+          );
+          return;
+        }
+
+        setIsProjectServerLoading(true);
+        const status = await invoke<ProjectServerStatus>(
+          "start_project_server",
+          {
+            projectRoot: joinPaths(nextRoot, nextProjectName),
+          },
+        );
+        setProjectServer(status);
+
+        if (!status.url) {
+          setOpenError(status.message || "Project server did not provide a URL.");
+          return;
+        }
+
+        await openUrl(status.url);
+      } catch (error) {
+        setOpenError(String(error));
+      } finally {
+        setIsProjectServerLoading(false);
+      }
+
       return;
     }
 
@@ -376,6 +496,28 @@ function App() {
     }
   }
 
+  async function openPhpMyAdmin() {
+    const url = phpMyAdminUrl.trim();
+    setOpenError("");
+
+    if (!isHttpUrl(url)) {
+      setOpenError("phpMyAdmin URL must start with http:// or https://.");
+      setPage("settings");
+      return;
+    }
+
+    try {
+      if (!runningInTauri) {
+        window.open(url, "_blank", "noopener,noreferrer");
+        return;
+      }
+
+      await openUrl(url);
+    } catch (error) {
+      setOpenError(String(error));
+    }
+  }
+
   async function stopProjectServer() {
     setOpenError("");
 
@@ -395,26 +537,134 @@ function App() {
     }
   }
 
-  function saveProjectRoot() {
+  function saveStackSettings(markSetupComplete = false) {
     const nextRoot = draftProjectRoot.trim();
+    const nextProjectName = normalizeProjectName(draftProjectName);
+    const nextPhpMyAdminUrl = draftPhpMyAdminUrl.trim();
 
     if (!isAbsolutePath(nextRoot)) {
-      setSettingsNotice("Enter a non-empty absolute path.");
-      return;
+      setSettingsNotice(
+        draftXamppMode
+          ? "Enter a non-empty absolute htdocs path."
+          : "Enter a non-empty absolute project root path.",
+      );
+      return false;
+    }
+
+    if (draftXamppMode && !nextProjectName) {
+      setSettingsNotice("Enter a project folder name for XAMPP mode.");
+      return false;
+    }
+
+    if (!isHttpUrl(nextPhpMyAdminUrl)) {
+      setSettingsNotice("phpMyAdmin URL must start with http:// or https://.");
+      return false;
     }
 
     localStorage.setItem(PROJECT_ROOT_KEY, nextRoot);
+    localStorage.setItem(PROJECT_NAME_KEY, nextProjectName);
+    localStorage.setItem(PHPMYADMIN_URL_KEY, nextPhpMyAdminUrl);
+    localStorage.setItem(XAMPP_MODE_KEY, String(draftXamppMode));
+
+    if (markSetupComplete) {
+      localStorage.setItem(SETUP_COMPLETE_KEY, "true");
+      setSetupComplete(true);
+    }
+
     setProjectRoot(nextRoot);
+    setProjectName(nextProjectName);
+    setPhpMyAdminUrl(nextPhpMyAdminUrl);
+    setXamppMode(draftXamppMode);
     setDraftProjectRoot(nextRoot);
-    setSettingsNotice("Project root saved.");
+    setDraftProjectName(nextProjectName);
+    setDraftPhpMyAdminUrl(nextPhpMyAdminUrl);
+    setSettingsNotice("Settings saved.");
     setOpenError("");
+
+    return true;
   }
 
-  function resetProjectRoot() {
+  async function completeSetup(openAfterSave = false) {
+    const nextRoot = draftProjectRoot.trim();
+    const nextProjectName = normalizeProjectName(draftProjectName);
+    const nextXamppMode = draftXamppMode;
+    const didSave = saveStackSettings(true);
+
+    if (!didSave) {
+      return;
+    }
+
+    if (openAfterSave) {
+      try {
+        if (nextXamppMode) {
+          if (!runningInTauri) {
+            window.open(
+              buildXamppProjectUrl(nextProjectName),
+              "_blank",
+              "noopener,noreferrer",
+            );
+            return;
+          }
+
+          setIsProjectServerLoading(true);
+          const status = await invoke<ProjectServerStatus>(
+            "start_project_server",
+            {
+              projectRoot: joinPaths(nextRoot, nextProjectName),
+            },
+          );
+          setProjectServer(status);
+
+          if (status.url) {
+            await openUrl(status.url);
+          } else {
+            setOpenError(
+              status.message || "Project server did not provide a URL.",
+            );
+          }
+
+          return;
+        }
+
+        if (!runningInTauri) {
+          setOpenError("Project serving requires the Tauri desktop runtime.");
+          return;
+        }
+
+        setIsProjectServerLoading(true);
+        const status = await invoke<ProjectServerStatus>(
+          "start_project_server",
+          {
+            projectRoot: nextRoot,
+          },
+        );
+        setProjectServer(status);
+
+        if (status.url) {
+          await openUrl(status.url);
+        }
+      } catch (error) {
+        setOpenError(String(error));
+      } finally {
+        setIsProjectServerLoading(false);
+      }
+    }
+  }
+
+  function resetStackSettings() {
     localStorage.setItem(PROJECT_ROOT_KEY, DEFAULT_PROJECT_ROOT);
+    localStorage.setItem(PROJECT_NAME_KEY, "");
+    localStorage.setItem(PHPMYADMIN_URL_KEY, DEFAULT_PHPMYADMIN_URL);
+    localStorage.setItem(XAMPP_MODE_KEY, "false");
     setProjectRoot(DEFAULT_PROJECT_ROOT);
+    setProjectName("");
+    setPhpMyAdminUrl(DEFAULT_PHPMYADMIN_URL);
+    setXamppMode(false);
     setDraftProjectRoot(DEFAULT_PROJECT_ROOT);
-    setSettingsNotice("Project root reset to the default.");
+    setDraftProjectName("");
+    setDraftPhpMyAdminUrl(DEFAULT_PHPMYADMIN_URL);
+    setDraftXamppMode(false);
+    setSettingsNotice("Settings reset to the default.");
     setOpenError("");
   }
 
@@ -487,15 +737,18 @@ function App() {
         >
           {isProjectServerLoading ? "Opening Site" : "Open Project Site"}
         </button>
+        <button onClick={() => void openPhpMyAdmin()} type="button">
+          phpMyAdmin
+        </button>
         <button
           disabled={!projectServer.running || isProjectServerLoading}
           onClick={() => void stopProjectServer()}
           type="button"
         >
-          Stop Project Site
+          Stop PHP Server
         </button>
-        <span className="path-readout" title={projectRoot}>
-          {projectRoot}
+        <span className="path-readout" title={projectReadout}>
+          {projectReadout}
         </span>
       </section>
 
@@ -504,6 +757,12 @@ function App() {
         <p className="notice">
           Project site running at {projectServer.url}
           {projectServer.root ? ` from ${projectServer.root}` : ""}.
+        </p>
+      ) : null}
+      {xamppMode ? (
+        <p className="notice">
+          XAMPP mode is active. StackPilot serves {xamppProjectRoot} with PHP's
+          built-in server. Apache-style route: {xamppProjectUrl}.
         </p>
       ) : null}
       {statusError ? <p className="notice error">{statusError}</p> : null}
@@ -633,8 +892,22 @@ function App() {
             </div>
           </div>
 
+          <label className="checkbox-field">
+            <input
+              checked={draftXamppMode}
+              onChange={(event) => {
+                setDraftXamppMode(event.target.checked);
+                setSettingsNotice("");
+              }}
+              type="checkbox"
+            />
+            <span>XAMPP compatibility mode</span>
+          </label>
+
           <label className="field">
-            <span>Project root path</span>
+            <span>
+              {draftXamppMode ? "htdocs equivalent path" : "Project root path"}
+            </span>
             <input
               onChange={(event) => {
                 setDraftProjectRoot(event.target.value);
@@ -645,14 +918,64 @@ function App() {
             />
           </label>
 
+          <label className="field">
+            <span>Project folder name</span>
+            <input
+              disabled={!draftXamppMode}
+              onChange={(event) => {
+                setDraftProjectName(event.target.value);
+                setSettingsNotice("");
+              }}
+              placeholder="my-project"
+              value={draftProjectName}
+            />
+          </label>
+
+          <label className="field">
+            <span>phpMyAdmin URL</span>
+            <input
+              onChange={(event) => {
+                setDraftPhpMyAdminUrl(event.target.value);
+                setSettingsNotice("");
+              }}
+              placeholder={DEFAULT_PHPMYADMIN_URL}
+              value={draftPhpMyAdminUrl}
+            />
+          </label>
+
           <div className="settings-actions">
-            <button className="primary-button" onClick={saveProjectRoot} type="button">
+            <button
+              className="primary-button"
+              onClick={() => saveStackSettings()}
+              type="button"
+            >
               Save
             </button>
-            <button onClick={resetProjectRoot} type="button">
+            <button onClick={resetStackSettings} type="button">
               Reset Default
             </button>
           </div>
+
+          {xamppMode ? (
+            <dl className="compat-readout">
+              <div>
+                <dt>served path</dt>
+                <dd>{xamppProjectRoot}</dd>
+              </div>
+              <div>
+                <dt>apache URL</dt>
+                <dd>{xamppProjectUrl}</dd>
+              </div>
+              <div>
+                <dt>htdocs</dt>
+                <dd>{projectRoot}</dd>
+              </div>
+              <div>
+                <dt>phpMyAdmin</dt>
+                <dd>{phpMyAdminUrl}</dd>
+              </div>
+            </dl>
+          ) : null}
 
           {settingsNotice ? <p className="notice">{settingsNotice}</p> : null}
 
@@ -692,7 +1015,74 @@ function App() {
         </section>
       )}
 
-      {pendingAction ? (
+      {!setupComplete ? (
+        <div aria-modal="true" className="modal-backdrop" role="dialog">
+          <div className="modal setup-modal">
+            <p className="eyebrow">first run</p>
+            <h2>XAMPP compatibility setup</h2>
+            <p>
+              Configure the folder StackPilot should treat like htdocs and the
+              project folder it should serve.
+            </p>
+
+            <label className="checkbox-field">
+              <input
+                checked={draftXamppMode}
+                onChange={(event) => setDraftXamppMode(event.target.checked)}
+                type="checkbox"
+              />
+              <span>Enable XAMPP compatibility mode</span>
+            </label>
+
+            <label className="field">
+              <span>
+                {draftXamppMode
+                  ? "htdocs equivalent path"
+                  : "Project root path"}
+              </span>
+              <input
+                onChange={(event) => setDraftProjectRoot(event.target.value)}
+                placeholder={DEFAULT_PROJECT_ROOT}
+                value={draftProjectRoot}
+              />
+            </label>
+
+            <label className="field">
+              <span>Project folder name</span>
+              <input
+                disabled={!draftXamppMode}
+                onChange={(event) => setDraftProjectName(event.target.value)}
+                placeholder="my-project"
+                value={draftProjectName}
+              />
+            </label>
+
+            <label className="field">
+              <span>phpMyAdmin URL</span>
+              <input
+                onChange={(event) => setDraftPhpMyAdminUrl(event.target.value)}
+                placeholder={DEFAULT_PHPMYADMIN_URL}
+                value={draftPhpMyAdminUrl}
+              />
+            </label>
+
+            {settingsNotice ? <p className="notice">{settingsNotice}</p> : null}
+
+            <div className="modal-actions">
+              <button onClick={() => void completeSetup(false)} type="button">
+                Save Setup
+              </button>
+              <button
+                className="primary-button"
+                onClick={() => void completeSetup(true)}
+                type="button"
+              >
+                Save and Open Project
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : pendingAction ? (
         <div aria-modal="true" className="modal-backdrop" role="dialog">
           <div className="modal">
             <p className="eyebrow">privileged command</p>
