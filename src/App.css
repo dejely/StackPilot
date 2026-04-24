@@ -87,6 +87,29 @@
   --shadow-soft: 0 1px 2px rgba(15, 23, 42, 0.08);
 }
 
+:root[data-theme="shadcn-dark"] {
+  --bg: #09090b;
+  --surface: #09090b;
+  --surface-raised: #18181b;
+  --surface-soft: #18181b;
+  --border: #27272a;
+  --border-strong: #3f3f46;
+  --text: #fafafa;
+  --muted: #a1a1aa;
+  --muted-strong: #d4d4d8;
+  --accent: #fafafa;
+  --accent-strong: #ffffff;
+  --accent-soft: #27272a;
+  --danger: #ef4444;
+  --danger-strong: #f87171;
+  --success: #22c55e;
+  --warning: #eab308;
+  --log-bg: #020617;
+  --log-text: #e4e4e7;
+  --shadow: none;
+  --shadow-soft: none;
+}
+
 :root[data-theme="terminal"] {
   --bg: #050806;
   --surface: #09110c;
@@ -150,24 +173,7 @@ body {
   min-width: 320px;
   min-height: 100vh;
   margin: 0;
-  background:
-    linear-gradient(180deg, rgba(37, 111, 159, 0.08), transparent 260px),
-    var(--bg);
-}
-
-:root[data-theme="blockcraft"] body {
-  background:
-    linear-gradient(180deg, rgba(87, 151, 222, 0.95) 0 132px, transparent 132px),
-    linear-gradient(180deg, transparent 0 calc(100% - 96px), #2f6f22 calc(100% - 96px)),
-    repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.12) 0 16px, transparent 16px 32px),
-    repeating-linear-gradient(0deg, #3a5d25 0 24px, #2d4f1d 24px 48px);
-}
-
-:root[data-theme="terminal"] body {
-  background:
-    linear-gradient(180deg, rgba(57, 255, 136, 0.08), transparent 280px),
-    repeating-linear-gradient(0deg, rgba(57, 255, 136, 0.035) 0 1px, transparent 1px 24px),
-    var(--bg);
+  background: var(--bg);
 }
 
 button,
@@ -424,7 +430,7 @@ p {
 
 .service-card {
   display: grid;
-  grid-template-columns: minmax(190px, 0.95fr) minmax(170px, 0.8fr) minmax(214px, max-content);
+  grid-template-columns: minmax(0, 1fr) minmax(230px, max-content);
   align-items: center;
   gap: 12px 16px;
   min-height: 132px;
@@ -496,9 +502,10 @@ p {
 
 .service-meta {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(104px, 1fr));
   gap: 8px;
   margin: 0;
+  min-width: 230px;
 }
 
 .service-meta div {
@@ -521,26 +528,29 @@ p {
   color: var(--text);
   font-weight: 800;
   line-height: 1.25;
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .service-message {
-  grid-column: 1 / 3;
+  grid-column: 1;
   min-height: 0;
   line-height: 1.45;
 }
 
 .service-actions {
-  grid-column: 3;
-  grid-row: 1 / span 2;
+  grid-column: 2;
+  grid-row: 2;
   display: grid;
-  grid-template-columns: repeat(3, minmax(64px, 1fr));
+  grid-template-columns: repeat(3, minmax(68px, 1fr));
   gap: 8px;
-  min-width: 214px;
+  min-width: 230px;
 }
 
 .service-actions button {
   padding: 0 8px;
+  white-space: nowrap;
 }
 
 .logs-panel {
@@ -700,12 +710,21 @@ p {
 :root[data-theme="shadcn"] .command-bar,
 :root[data-theme="shadcn"] .panel,
 :root[data-theme="shadcn"] .service-card,
-:root[data-theme="shadcn"] .modal {
+:root[data-theme="shadcn"] .modal,
+:root[data-theme="shadcn-dark"] .app-header,
+:root[data-theme="shadcn-dark"] .command-bar,
+:root[data-theme="shadcn-dark"] .panel,
+:root[data-theme="shadcn-dark"] .service-card,
+:root[data-theme="shadcn-dark"] .modal {
   box-shadow: none;
 }
 
 :root[data-theme="shadcn"] .primary-button {
   color: #ffffff;
+}
+
+:root[data-theme="shadcn-dark"] .primary-button {
+  color: #09090b;
 }
 
 :root[data-theme="terminal"] .app-header,
@@ -732,19 +751,14 @@ p {
 :root[data-theme="blockcraft"] .service-card,
 :root[data-theme="blockcraft"] .modal {
   border: 4px solid #090604;
-  background:
-    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.035) 0 6px, transparent 6px 12px),
-    repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.14) 0 12px, transparent 12px 24px),
-    var(--surface);
+  background: var(--surface);
   box-shadow:
     inset 0 0 0 2px rgba(255, 255, 255, 0.12),
     var(--shadow-soft);
 }
 
 :root[data-theme="blockcraft"] .app-header {
-  background:
-    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.04) 0 8px, transparent 8px 16px),
-    repeating-linear-gradient(90deg, #4c3119 0 18px, #3a2413 18px 36px);
+  background: var(--surface-raised);
 }
 
 :root[data-theme="blockcraft"] h1,
@@ -784,9 +798,7 @@ p {
 }
 
 :root[data-theme="blockcraft"] .logs {
-  background:
-    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.025) 0 11px, transparent 11px 22px),
-    var(--log-bg);
+  background: var(--log-bg);
 }
 
 @media (max-width: 1120px) {

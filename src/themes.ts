@@ -17,10 +17,17 @@ export const UI_THEMES = [
   },
   {
     id: "shadcn",
-    name: "shadcn",
-    description: "Neutral, restrained, component-library feel.",
+    name: "shadcn Light",
+    description: "Neutral, restrained light component-library feel.",
     colorScheme: "light",
     swatches: ["#18181b", "#ffffff", "#71717a"],
+  },
+  {
+    id: "shadcn-dark",
+    name: "shadcn Dark",
+    description: "Neutral, restrained dark component-library feel.",
+    colorScheme: "dark",
+    swatches: ["#fafafa", "#09090b", "#a1a1aa"],
   },
   {
     id: "midnight",
