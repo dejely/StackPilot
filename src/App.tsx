@@ -42,6 +42,14 @@ type CommandResult = {
   stderr: string;
 };
 
+type ProjectServerStatus = {
+  running: boolean;
+  root?: string | null;
+  url?: string | null;
+  port?: number | null;
+  message: string;
+};
+
 type PendingAction = {
   service: ServiceName;
   action: ServiceAction;
@@ -92,6 +100,16 @@ function getPreviewStatuses(): ServiceStatus[] {
   }));
 }
 
+function getPreviewProjectServerStatus(): ProjectServerStatus {
+  return {
+    running: false,
+    root: null,
+    url: null,
+    port: null,
+    message: "Desktop runtime required to serve projects.",
+  };
+}
+
 function isAbsolutePath(path: string) {
   return path.trim().startsWith("/");
 }
@@ -140,6 +158,10 @@ function App() {
   const [draftProjectRoot, setDraftProjectRoot] = useState(projectRoot);
   const [settingsNotice, setSettingsNotice] = useState("");
   const [openError, setOpenError] = useState("");
+  const [projectServer, setProjectServer] = useState<ProjectServerStatus>(
+    getPreviewProjectServerStatus,
+  );
+  const [isProjectServerLoading, setIsProjectServerLoading] = useState(false);
   const [theme, setTheme] = useState<ThemeId>(getInitialTheme);
   const runningInTauri = useMemo(() => isTauri(), []);
 
@@ -214,6 +236,22 @@ function App() {
     }
   }, [runningInTauri]);
 
+  const loadProjectServerStatus = useCallback(async () => {
+    if (!runningInTauri) {
+      setProjectServer(getPreviewProjectServerStatus());
+      return;
+    }
+
+    try {
+      const status = await invoke<ProjectServerStatus>(
+        "get_project_server_status",
+      );
+      setProjectServer(status);
+    } catch (error) {
+      setOpenError(String(error));
+    }
+  }, [runningInTauri]);
+
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     document.documentElement.style.colorScheme = activeTheme.colorScheme;
@@ -233,6 +271,16 @@ function App() {
   useEffect(() => {
     void loadLogs(selectedService);
   }, [loadLogs, selectedService]);
+
+  useEffect(() => {
+    void loadProjectServerStatus();
+
+    const pollId = window.setInterval(() => {
+      void loadProjectServerStatus();
+    }, POLL_INTERVAL_MS);
+
+    return () => window.clearInterval(pollId);
+  }, [loadProjectServerStatus]);
 
   async function runPendingAction() {
     if (!pendingAction) {
@@ -293,18 +341,57 @@ function App() {
     }
   }
 
-  async function openLocalhost() {
+  async function openProjectSite() {
+    const nextRoot = projectRoot.trim();
+    setOpenError("");
+
+    if (!isAbsolutePath(nextRoot)) {
+      setOpenError("Project root must be a non-empty absolute path.");
+      setPage("settings");
+      return;
+    }
+
+    try {
+      if (!runningInTauri) {
+        setOpenError("Project serving requires the Tauri desktop runtime.");
+        return;
+      }
+
+      setIsProjectServerLoading(true);
+      const status = await invoke<ProjectServerStatus>("start_project_server", {
+        projectRoot: nextRoot,
+      });
+      setProjectServer(status);
+
+      if (!status.url) {
+        setOpenError(status.message || "Project server did not provide a URL.");
+        return;
+      }
+
+      await openUrl(status.url);
+    } catch (error) {
+      setOpenError(String(error));
+    } finally {
+      setIsProjectServerLoading(false);
+    }
+  }
+
+  async function stopProjectServer() {
     setOpenError("");
 
     try {
       if (!runningInTauri) {
-        window.open("http://localhost", "_blank", "noopener,noreferrer");
+        setOpenError("Project serving requires the Tauri desktop runtime.");
         return;
       }
 
-      await openUrl("http://localhost");
+      setIsProjectServerLoading(true);
+      const status = await invoke<ProjectServerStatus>("stop_project_server");
+      setProjectServer(status);
     } catch (error) {
       setOpenError(String(error));
+    } finally {
+      setIsProjectServerLoading(false);
     }
   }
 
@@ -393,8 +480,19 @@ function App() {
         <button onClick={() => void openProjectRoot()} type="button">
           Open Project Root
         </button>
-        <button onClick={() => void openLocalhost()} type="button">
-          Open Localhost
+        <button
+          disabled={isProjectServerLoading}
+          onClick={() => void openProjectSite()}
+          type="button"
+        >
+          {isProjectServerLoading ? "Opening Site" : "Open Project Site"}
+        </button>
+        <button
+          disabled={!projectServer.running || isProjectServerLoading}
+          onClick={() => void stopProjectServer()}
+          type="button"
+        >
+          Stop Project Site
         </button>
         <span className="path-readout" title={projectRoot}>
           {projectRoot}
@@ -402,6 +500,12 @@ function App() {
       </section>
 
       {openError ? <p className="notice error">{openError}</p> : null}
+      {projectServer.running && projectServer.url ? (
+        <p className="notice">
+          Project site running at {projectServer.url}
+          {projectServer.root ? ` from ${projectServer.root}` : ""}.
+        </p>
+      ) : null}
       {statusError ? <p className="notice error">{statusError}</p> : null}
       {actionNotice ? <p className="notice">{actionNotice}</p> : null}
 

@@ -311,7 +311,7 @@ p {
 
 .command-bar {
   display: grid;
-  grid-template-columns: max-content max-content max-content minmax(220px, 1fr);
+  grid-template-columns: max-content max-content max-content max-content minmax(220px, 1fr);
   align-items: center;
   gap: 10px;
   margin-top: 14px;
