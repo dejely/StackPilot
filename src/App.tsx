@@ -12,23 +12,116 @@ import {
 const PROJECT_ROOT_KEY = "stackpilot.projectRoot";
 const PROJECT_NAME_KEY = "stackpilot.projectName";
 const PHPMYADMIN_URL_KEY = "stackpilot.phpMyAdminUrl";
+const DISTRO_PRESET_KEY = "stackpilot.distroPreset";
+const SERVICE_UNITS_KEY = "stackpilot.serviceUnits";
 const SETUP_COMPLETE_KEY = "stackpilot.setupComplete";
 const THEME_KEY = "stackpilot.theme";
+const WINDOWS_MODE_KEY = "stackpilot.windowsMode";
 const XAMPP_MODE_KEY = "stackpilot.xamppMode";
 const DEFAULT_PROJECT_ROOT = "/var/www/html";
 const DEFAULT_PHPMYADMIN_URL = "http://localhost/phpmyadmin";
 const POLL_INTERVAL_MS = 10_000;
 const LOG_LINE_COUNT = 80;
 
-const SERVICE_DEFINITIONS = [
-  { name: "httpd", label: "Apache HTTP Server" },
-  { name: "mariadb", label: "MariaDB" },
-  { name: "php-fpm", label: "PHP-FPM" },
-] as const;
+const SERVICE_ROLES = ["web", "database", "php"] as const;
+
+type ServiceRole = (typeof SERVICE_ROLES)[number];
+type PresetId = "fedora" | "arch" | "ubuntu" | "debian" | "windows";
+
+type ServiceDefinition = {
+  role: ServiceRole;
+  name: string;
+  label: string;
+};
+
+type StackPreset = {
+  id: PresetId;
+  name: string;
+  platform: "linux" | "windows";
+  projectRoot: string;
+  xamppMode: boolean;
+  phpMyAdminUrl: string;
+  description: string;
+  services: ServiceDefinition[];
+};
+
+const STACK_PRESETS = [
+  {
+    id: "fedora",
+    name: "Fedora",
+    platform: "linux",
+    projectRoot: "/var/www/html",
+    xamppMode: false,
+    phpMyAdminUrl: DEFAULT_PHPMYADMIN_URL,
+    description: "Fedora package names and systemd units.",
+    services: [
+      { role: "web", name: "httpd", label: "Apache HTTP Server" },
+      { role: "database", name: "mariadb", label: "MariaDB" },
+      { role: "php", name: "php-fpm", label: "PHP-FPM" },
+    ],
+  },
+  {
+    id: "arch",
+    name: "Arch",
+    platform: "linux",
+    projectRoot: "/srv/http",
+    xamppMode: false,
+    phpMyAdminUrl: DEFAULT_PHPMYADMIN_URL,
+    description: "Arch defaults for Apache, MariaDB, and PHP-FPM.",
+    services: [
+      { role: "web", name: "httpd", label: "Apache HTTP Server" },
+      { role: "database", name: "mariadb", label: "MariaDB" },
+      { role: "php", name: "php-fpm", label: "PHP-FPM" },
+    ],
+  },
+  {
+    id: "ubuntu",
+    name: "Ubuntu",
+    platform: "linux",
+    projectRoot: "/var/www/html",
+    xamppMode: false,
+    phpMyAdminUrl: DEFAULT_PHPMYADMIN_URL,
+    description: "Ubuntu Apache unit names. Edit PHP-FPM if your version differs.",
+    services: [
+      { role: "web", name: "apache2", label: "Apache HTTP Server" },
+      { role: "database", name: "mariadb", label: "MariaDB" },
+      { role: "php", name: "php8.3-fpm", label: "PHP-FPM" },
+    ],
+  },
+  {
+    id: "debian",
+    name: "Debian",
+    platform: "linux",
+    projectRoot: "/var/www/html",
+    xamppMode: false,
+    phpMyAdminUrl: DEFAULT_PHPMYADMIN_URL,
+    description: "Debian Apache unit names. Edit PHP-FPM if your version differs.",
+    services: [
+      { role: "web", name: "apache2", label: "Apache HTTP Server" },
+      { role: "database", name: "mariadb", label: "MariaDB" },
+      { role: "php", name: "php8.2-fpm", label: "PHP-FPM" },
+    ],
+  },
+  {
+    id: "windows",
+    name: "Windows",
+    platform: "windows",
+    projectRoot: "C:\\xampp\\htdocs",
+    xamppMode: true,
+    phpMyAdminUrl: DEFAULT_PHPMYADMIN_URL,
+    description: "XAMPP-style paths. systemd controls are disabled.",
+    services: [
+      { role: "web", name: "apache", label: "Apache HTTP Server" },
+      { role: "database", name: "mysql", label: "MySQL or MariaDB" },
+      { role: "php", name: "php", label: "PHP" },
+    ],
+  },
+] satisfies StackPreset[];
 
 const SERVICE_ACTIONS = ["start", "stop", "restart"] as const;
+const DEFAULT_PRESET = STACK_PRESETS[0];
 
-type ServiceName = (typeof SERVICE_DEFINITIONS)[number]["name"];
+type ServiceName = string;
 type ServiceAction = (typeof SERVICE_ACTIONS)[number];
 
 type ServiceStatus = {
@@ -61,20 +154,13 @@ type PendingAction = {
 };
 
 type Page = "dashboard" | "settings";
+type SetupStep = "preset" | "project";
 
 const actionLabels: Record<ServiceAction, string> = {
   start: "Start",
   stop: "Stop",
   restart: "Restart",
 };
-
-const serviceLabels = SERVICE_DEFINITIONS.reduce<Record<ServiceName, string>>(
-  (labels, service) => {
-    labels[service.name] = service.label;
-    return labels;
-  },
-  {} as Record<ServiceName, string>,
-);
 
 function getInitialProjectRoot() {
   return localStorage.getItem(PROJECT_ROOT_KEY) || DEFAULT_PROJECT_ROOT;
@@ -92,8 +178,40 @@ function getInitialXamppMode() {
   return localStorage.getItem(XAMPP_MODE_KEY) === "true";
 }
 
+function isPresetId(value: string | null): value is PresetId {
+  return STACK_PRESETS.some((preset) => preset.id === value);
+}
+
+function getPreset(id: PresetId) {
+  return (
+    STACK_PRESETS.find((preset) => preset.id === id) || DEFAULT_PRESET
+  );
+}
+
+function getInitialPresetId(): PresetId {
+  const savedPreset = localStorage.getItem(DISTRO_PRESET_KEY);
+
+  if (isPresetId(savedPreset)) {
+    return savedPreset;
+  }
+
+  return DEFAULT_PRESET.id;
+}
+
+function getInitialWindowsMode() {
+  const savedValue = localStorage.getItem(WINDOWS_MODE_KEY);
+
+  if (savedValue !== null) {
+    return savedValue === "true";
+  }
+
+  return getInitialPresetId() === "windows";
+}
+
 function getInitialDraftXamppMode() {
-  return getInitialSetupComplete() ? getInitialXamppMode() : true;
+  return getInitialSetupComplete()
+    ? getInitialXamppMode()
+    : getPreset(getInitialPresetId()).xamppMode;
 }
 
 function getInitialSetupComplete() {
@@ -114,14 +232,41 @@ function getInitialTheme(): ThemeId {
   return DEFAULT_THEME_ID;
 }
 
-function getPreviewStatuses(): ServiceStatus[] {
-  return SERVICE_DEFINITIONS.map((service) => ({
+function getInitialServiceDefinitions(): ServiceDefinition[] {
+  const savedServices = localStorage.getItem(SERVICE_UNITS_KEY);
+
+  if (savedServices) {
+    try {
+      const parsedServices = JSON.parse(savedServices);
+
+      if (isServiceDefinitions(parsedServices)) {
+        return parsedServices;
+      }
+    } catch {
+      localStorage.removeItem(SERVICE_UNITS_KEY);
+    }
+  }
+
+  return getPreset(getInitialPresetId()).services;
+}
+
+function getInitialSelectedService() {
+  return getInitialServiceDefinitions()[0]?.name || "httpd";
+}
+
+function getPreviewStatuses(
+  services: ServiceDefinition[],
+  windowsMode = false,
+): ServiceStatus[] {
+  return services.map((service) => ({
     name: service.name,
     label: service.label,
     activeState: "unknown",
     enabledState: null,
     ok: false,
-    message: "Desktop runtime required for systemd status.",
+    message: windowsMode
+      ? "Windows preset selected. systemd service controls are disabled."
+      : "Desktop runtime required for systemd status.",
   }));
 }
 
@@ -135,8 +280,74 @@ function getPreviewProjectServerStatus(): ProjectServerStatus {
   };
 }
 
-function isAbsolutePath(path: string) {
+function isServiceDefinitions(value: unknown): value is ServiceDefinition[] {
+  if (!Array.isArray(value) || value.length !== SERVICE_ROLES.length) {
+    return false;
+  }
+
+  return value.every((service) => {
+    if (!service || typeof service !== "object") {
+      return false;
+    }
+
+    const candidate = service as Partial<ServiceDefinition>;
+    return (
+      typeof candidate.name === "string" &&
+      typeof candidate.label === "string" &&
+      SERVICE_ROLES.includes(candidate.role as ServiceRole)
+    );
+  });
+}
+
+function getServiceLabel(services: ServiceDefinition[], serviceName: string) {
+  return (
+    services.find((service) => service.name === serviceName)?.label ||
+    serviceName
+  );
+}
+
+function isWindowsAbsolutePath(path: string) {
+  const trimmedPath = path.trim();
+  return /^[A-Za-z]:[\\/]/.test(trimmedPath) || /^\\\\[^\\]+\\[^\\]+/.test(trimmedPath);
+}
+
+function isUnixAbsolutePath(path: string) {
   return path.trim().startsWith("/");
+}
+
+function isAbsolutePath(path: string, windowsMode = false) {
+  return windowsMode
+    ? isWindowsAbsolutePath(path) || isUnixAbsolutePath(path)
+    : isUnixAbsolutePath(path);
+}
+
+function isValidServiceUnitName(name: string) {
+  return /^[A-Za-z0-9_.@:-]+$/.test(name.trim());
+}
+
+function normalizeServiceDefinitions(services: ServiceDefinition[]) {
+  return services.map((service) => ({
+    ...service,
+    name: service.name.trim(),
+    label: service.label.trim(),
+  }));
+}
+
+function validateServiceDefinitions(services: ServiceDefinition[]) {
+  const normalizedServices = normalizeServiceDefinitions(services);
+
+  for (const service of normalizedServices) {
+    if (!service.name || !isValidServiceUnitName(service.name)) {
+      return {
+        ok: false,
+        message:
+          "Service unit names may only contain letters, numbers, dots, dashes, underscores, colons, and @.",
+        services: normalizedServices,
+      };
+    }
+  }
+
+  return { ok: true, message: "", services: normalizedServices };
 }
 
 function isHttpUrl(url: string) {
@@ -144,7 +355,7 @@ function isHttpUrl(url: string) {
 }
 
 function normalizeProjectName(name: string) {
-  return name.trim().replace(/^\/+|\/+$/g, "");
+  return name.trim().replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
 }
 
 function buildXamppProjectUrl(name: string) {
@@ -164,7 +375,19 @@ function buildXamppProjectUrl(name: string) {
 }
 
 function joinPaths(root: string, child: string) {
-  return `${root.replace(/\/+$/g, "")}/${child.replace(/^\/+/g, "")}`;
+  const trimmedRoot = root.trim();
+  const trimmedChild = child.trim();
+
+  if (isWindowsAbsolutePath(trimmedRoot) || trimmedRoot.includes("\\")) {
+    return `${trimmedRoot.replace(/[\\/]+$/g, "")}\\${trimmedChild
+      .replace(/^[\\/]+/g, "")
+      .replace(/\//g, "\\")}`;
+  }
+
+  return `${trimmedRoot.replace(/\/+$/g, "")}/${trimmedChild.replace(
+    /^\/+/g,
+    "",
+  )}`;
 }
 
 function describeCommandResult(result: CommandResult) {
@@ -198,7 +421,9 @@ function App() {
   const [statuses, setStatuses] = useState<ServiceStatus[]>([]);
   const [statusError, setStatusError] = useState("");
   const [isStatusLoading, setIsStatusLoading] = useState(false);
-  const [selectedService, setSelectedService] = useState<ServiceName>("httpd");
+  const [selectedService, setSelectedService] = useState<ServiceName>(
+    getInitialSelectedService,
+  );
   const [logs, setLogs] = useState("");
   const [logsError, setLogsError] = useState("");
   const [isLogsLoading, setIsLogsLoading] = useState(false);
@@ -207,10 +432,21 @@ function App() {
   );
   const [isActionRunning, setIsActionRunning] = useState(false);
   const [actionNotice, setActionNotice] = useState("");
+  const [distroPreset, setDistroPreset] =
+    useState<PresetId>(getInitialPresetId);
+  const [windowsMode, setWindowsMode] = useState(getInitialWindowsMode);
+  const [serviceDefinitions, setServiceDefinitions] = useState(
+    getInitialServiceDefinitions,
+  );
   const [projectRoot, setProjectRoot] = useState(getInitialProjectRoot);
   const [projectName, setProjectName] = useState(getInitialProjectName);
   const [phpMyAdminUrl, setPhpMyAdminUrl] = useState(getInitialPhpMyAdminUrl);
   const [xamppMode, setXamppMode] = useState(getInitialXamppMode);
+  const [draftDistroPreset, setDraftDistroPreset] =
+    useState<PresetId>(distroPreset);
+  const [draftWindowsMode, setDraftWindowsMode] = useState(windowsMode);
+  const [draftServiceDefinitions, setDraftServiceDefinitions] =
+    useState(serviceDefinitions);
   const [draftProjectRoot, setDraftProjectRoot] = useState(projectRoot);
   const [draftProjectName, setDraftProjectName] = useState(projectName);
   const [draftPhpMyAdminUrl, setDraftPhpMyAdminUrl] =
@@ -219,6 +455,7 @@ function App() {
     getInitialDraftXamppMode,
   );
   const [setupComplete, setSetupComplete] = useState(getInitialSetupComplete);
+  const [setupStep, setSetupStep] = useState<SetupStep>("preset");
   const [settingsNotice, setSettingsNotice] = useState("");
   const [openError, setOpenError] = useState("");
   const [projectServer, setProjectServer] = useState<ProjectServerStatus>(
@@ -234,12 +471,18 @@ function App() {
     );
   }, [theme]);
 
+  const activePreset = useMemo(() => getPreset(distroPreset), [distroPreset]);
+  const draftPreset = useMemo(
+    () => getPreset(draftDistroPreset),
+    [draftDistroPreset],
+  );
+
   const activeServiceCount = useMemo(() => {
     return statuses.filter((status) => status.ok).length;
   }, [statuses]);
 
   const statusByName = useMemo(() => {
-    return statuses.reduce<Partial<Record<ServiceName, ServiceStatus>>>(
+    return statuses.reduce<Record<ServiceName, ServiceStatus>>(
       (accumulator, status) => {
         accumulator[status.name] = status;
         return accumulator;
@@ -248,7 +491,7 @@ function App() {
     );
   }, [statuses]);
 
-  const selectedLabel = serviceLabels[selectedService];
+  const selectedLabel = getServiceLabel(serviceDefinitions, selectedService);
   const xamppProjectUrl = useMemo(
     () => buildXamppProjectUrl(projectName),
     [projectName],
@@ -264,30 +507,34 @@ function App() {
     setIsStatusLoading(true);
     setStatusError("");
 
-    if (!runningInTauri) {
-      setStatuses(getPreviewStatuses());
+    if (!runningInTauri || windowsMode) {
+      setStatuses(getPreviewStatuses(serviceDefinitions, windowsMode));
       setIsStatusLoading(false);
       return;
     }
 
     try {
       const nextStatuses =
-        await invoke<ServiceStatus[]>("get_service_statuses");
+        await invoke<ServiceStatus[]>("get_service_statuses", {
+          services: serviceDefinitions,
+        });
       setStatuses(nextStatuses);
     } catch (error) {
       setStatusError(String(error));
     } finally {
       setIsStatusLoading(false);
     }
-  }, [runningInTauri]);
+  }, [runningInTauri, serviceDefinitions, windowsMode]);
 
   const loadLogs = useCallback(async (service: ServiceName) => {
     setIsLogsLoading(true);
     setLogsError("");
 
-    if (!runningInTauri) {
+    if (!runningInTauri || windowsMode) {
       setLogs(
-        `journalctl preview unavailable.\n\nRun this app with the Tauri desktop runtime to read recent ${service} logs.`,
+        windowsMode
+          ? "journalctl is not available for the Windows preset.\n\nUse XAMPP Control Panel or Windows services for stack-level service logs."
+          : `journalctl preview unavailable.\n\nRun this app with the Tauri desktop runtime to read recent ${service} logs.`,
       );
       setIsLogsLoading(false);
       return;
@@ -307,7 +554,7 @@ function App() {
     } finally {
       setIsLogsLoading(false);
     }
-  }, [runningInTauri]);
+  }, [runningInTauri, windowsMode]);
 
   const loadProjectServerStatus = useCallback(async () => {
     if (!runningInTauri) {
@@ -342,6 +589,12 @@ function App() {
   }, [loadStatuses]);
 
   useEffect(() => {
+    if (!serviceDefinitions.some((service) => service.name === selectedService)) {
+      setSelectedService(serviceDefinitions[0]?.name || "");
+    }
+  }, [selectedService, serviceDefinitions]);
+
+  useEffect(() => {
     void loadLogs(selectedService);
   }, [loadLogs, selectedService]);
 
@@ -363,8 +616,12 @@ function App() {
     setIsActionRunning(true);
     setActionNotice("");
 
-    if (!runningInTauri) {
-      setActionNotice("Service actions require the Tauri desktop runtime.");
+    if (!runningInTauri || windowsMode) {
+      setActionNotice(
+        windowsMode
+          ? "Windows preset selected. Use XAMPP Control Panel or Windows services for stack-level service actions."
+          : "Service actions require the Tauri desktop runtime.",
+      );
       setIsActionRunning(false);
       return;
     }
@@ -374,7 +631,7 @@ function App() {
         service: pendingAction.service,
         action: pendingAction.action,
       });
-      const label = serviceLabels[pendingAction.service];
+      const label = getServiceLabel(serviceDefinitions, pendingAction.service);
       const verb = actionLabels[pendingAction.action].toLowerCase();
 
       setActionNotice(
@@ -396,8 +653,12 @@ function App() {
     const nextRoot = projectRoot.trim();
     setOpenError("");
 
-    if (!isAbsolutePath(nextRoot)) {
-      setOpenError("Project root must be a non-empty absolute path.");
+    if (!isAbsolutePath(nextRoot, windowsMode)) {
+      setOpenError(
+        windowsMode
+          ? "Project root must be an absolute path, for example C:\\xampp\\htdocs."
+          : "Project root must be a non-empty absolute path.",
+      );
       setPage("settings");
       return;
     }
@@ -418,9 +679,11 @@ function App() {
     const nextRoot = projectRoot.trim();
     setOpenError("");
 
-    if (!isAbsolutePath(nextRoot)) {
+    if (!isAbsolutePath(nextRoot, windowsMode)) {
       setOpenError(
-        xamppMode
+        windowsMode
+          ? "htdocs path must be an absolute path, for example C:\\xampp\\htdocs."
+          : xamppMode
           ? "htdocs path must be a non-empty absolute path."
           : "Project root must be a non-empty absolute path.",
       );
@@ -537,14 +800,41 @@ function App() {
     }
   }
 
+  function applyPreset(presetId: PresetId) {
+    const preset = getPreset(presetId);
+    const isWindowsPreset = preset.platform === "windows";
+
+    setDraftDistroPreset(preset.id);
+    setDraftWindowsMode(isWindowsPreset);
+    setDraftServiceDefinitions(preset.services);
+    setDraftProjectRoot(preset.projectRoot);
+    setDraftPhpMyAdminUrl(preset.phpMyAdminUrl);
+    setDraftXamppMode(preset.xamppMode);
+    setSettingsNotice("");
+  }
+
+  function setDraftServiceName(role: ServiceRole, name: string) {
+    setDraftServiceDefinitions((services) =>
+      services.map((service) =>
+        service.role === role ? { ...service, name } : service,
+      ),
+    );
+    setSettingsNotice("");
+  }
+
   function saveStackSettings(markSetupComplete = false) {
     const nextRoot = draftProjectRoot.trim();
     const nextProjectName = normalizeProjectName(draftProjectName);
     const nextPhpMyAdminUrl = draftPhpMyAdminUrl.trim();
+    const serviceValidation = validateServiceDefinitions(
+      draftServiceDefinitions,
+    );
 
-    if (!isAbsolutePath(nextRoot)) {
+    if (!isAbsolutePath(nextRoot, draftWindowsMode)) {
       setSettingsNotice(
-        draftXamppMode
+        draftWindowsMode
+          ? "Enter an absolute htdocs path, for example C:\\xampp\\htdocs."
+          : draftXamppMode
           ? "Enter a non-empty absolute htdocs path."
           : "Enter a non-empty absolute project root path.",
       );
@@ -561,9 +851,21 @@ function App() {
       return false;
     }
 
+    if (!serviceValidation.ok) {
+      setSettingsNotice(serviceValidation.message);
+      return false;
+    }
+
+    const nextPreset = draftWindowsMode ? "windows" : draftDistroPreset;
+    const nextWindowsMode = draftWindowsMode;
+    const nextServices = serviceValidation.services;
+
+    localStorage.setItem(DISTRO_PRESET_KEY, nextPreset);
     localStorage.setItem(PROJECT_ROOT_KEY, nextRoot);
     localStorage.setItem(PROJECT_NAME_KEY, nextProjectName);
     localStorage.setItem(PHPMYADMIN_URL_KEY, nextPhpMyAdminUrl);
+    localStorage.setItem(SERVICE_UNITS_KEY, JSON.stringify(nextServices));
+    localStorage.setItem(WINDOWS_MODE_KEY, String(nextWindowsMode));
     localStorage.setItem(XAMPP_MODE_KEY, String(draftXamppMode));
 
     if (markSetupComplete) {
@@ -571,10 +873,16 @@ function App() {
       setSetupComplete(true);
     }
 
+    setDistroPreset(nextPreset);
+    setWindowsMode(nextWindowsMode);
+    setServiceDefinitions(nextServices);
     setProjectRoot(nextRoot);
     setProjectName(nextProjectName);
     setPhpMyAdminUrl(nextPhpMyAdminUrl);
     setXamppMode(draftXamppMode);
+    setDraftDistroPreset(nextPreset);
+    setDraftWindowsMode(nextWindowsMode);
+    setDraftServiceDefinitions(nextServices);
     setDraftProjectRoot(nextRoot);
     setDraftProjectName(nextProjectName);
     setDraftPhpMyAdminUrl(nextPhpMyAdminUrl);
@@ -652,14 +960,25 @@ function App() {
   }
 
   function resetStackSettings() {
+    const defaultServices = DEFAULT_PRESET.services;
+
+    localStorage.setItem(DISTRO_PRESET_KEY, DEFAULT_PRESET.id);
     localStorage.setItem(PROJECT_ROOT_KEY, DEFAULT_PROJECT_ROOT);
     localStorage.setItem(PROJECT_NAME_KEY, "");
     localStorage.setItem(PHPMYADMIN_URL_KEY, DEFAULT_PHPMYADMIN_URL);
+    localStorage.setItem(SERVICE_UNITS_KEY, JSON.stringify(defaultServices));
+    localStorage.setItem(WINDOWS_MODE_KEY, "false");
     localStorage.setItem(XAMPP_MODE_KEY, "false");
+    setDistroPreset(DEFAULT_PRESET.id);
+    setWindowsMode(false);
+    setServiceDefinitions(defaultServices);
     setProjectRoot(DEFAULT_PROJECT_ROOT);
     setProjectName("");
     setPhpMyAdminUrl(DEFAULT_PHPMYADMIN_URL);
     setXamppMode(false);
+    setDraftDistroPreset(DEFAULT_PRESET.id);
+    setDraftWindowsMode(false);
+    setDraftServiceDefinitions(defaultServices);
     setDraftProjectRoot(DEFAULT_PROJECT_ROOT);
     setDraftProjectName("");
     setDraftPhpMyAdminUrl(DEFAULT_PHPMYADMIN_URL);
@@ -672,7 +991,7 @@ function App() {
     <main className="app-shell">
       <header className="app-header">
         <div>
-          <p className="eyebrow">Local LAMP stack</p>
+          <p className="eyebrow">Local LAMP stack / {activePreset.name}</p>
           <h1>StackPilot</h1>
         </div>
 
@@ -715,6 +1034,12 @@ function App() {
         <p className="notice warning">
           Browser preview mode: systemd, journalctl, pkexec, and local folder
           actions are available only inside the Tauri desktop runtime.
+        </p>
+      ) : null}
+      {windowsMode ? (
+        <p className="notice warning">
+          Windows preset is active. StackPilot will use XAMPP-style paths and
+          project serving; systemd service controls are disabled.
         </p>
       ) : null}
 
@@ -778,13 +1103,13 @@ function App() {
               </div>
               <span className="summary-pill">
                 {statuses.length
-                  ? `${activeServiceCount}/${SERVICE_DEFINITIONS.length} active`
+                  ? `${activeServiceCount}/${serviceDefinitions.length} active`
                   : "Checking services"}
               </span>
             </div>
 
             <div className="service-grid">
-              {SERVICE_DEFINITIONS.map((service) => {
+              {serviceDefinitions.map((service) => {
                 const status = statusByName[service.name];
                 const activeState = normalizeStatus(
                   status?.activeState || "unknown",
@@ -823,7 +1148,9 @@ function App() {
                     <div className="service-actions">
                       {SERVICE_ACTIONS.map((action) => (
                         <button
-                          disabled={isActionRunning || !runningInTauri}
+                          disabled={
+                            isActionRunning || !runningInTauri || windowsMode
+                          }
                           key={action}
                           onClick={() =>
                             setPendingAction({
@@ -859,7 +1186,7 @@ function App() {
                     }
                     value={selectedService}
                   >
-                    {SERVICE_DEFINITIONS.map((service) => (
+                    {serviceDefinitions.map((service) => (
                       <option key={service.name} value={service.name}>
                         {service.label}
                       </option>
@@ -891,6 +1218,76 @@ function App() {
               <h2 id="settings-title">Settings</h2>
             </div>
           </div>
+
+          <section className="settings-section" aria-labelledby="preset-title">
+            <div>
+              <p className="eyebrow">environment</p>
+              <h3 id="preset-title">Distro Preset</h3>
+            </div>
+
+            <label className="checkbox-field">
+              <input
+                checked={draftWindowsMode}
+                onChange={(event) => {
+                  applyPreset(event.target.checked ? "windows" : "fedora");
+                }}
+                type="checkbox"
+              />
+              <span>Windows or XAMPP for Windows</span>
+            </label>
+
+            {!draftWindowsMode ? (
+              <div className="preset-grid">
+                {STACK_PRESETS.filter(
+                  (preset) => preset.platform === "linux",
+                ).map((preset) => (
+                  <button
+                    className={
+                      preset.id === draftDistroPreset
+                        ? "preset-card active"
+                        : "preset-card"
+                    }
+                    key={preset.id}
+                    onClick={() => applyPreset(preset.id)}
+                    type="button"
+                  >
+                    <span>{preset.name}</span>
+                    <small>{preset.description}</small>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+
+            <p className="settings-hint">
+              Active preset after save: {draftPreset.name}
+            </p>
+          </section>
+
+          <section
+            className="settings-section"
+            aria-labelledby="service-units-title"
+          >
+            <div>
+              <p className="eyebrow">service map</p>
+              <h3 id="service-units-title">Service Unit Names</h3>
+            </div>
+
+            <div className="service-unit-grid">
+              {draftServiceDefinitions.map((service) => (
+                <label className="field" key={service.role}>
+                  <span>{service.label}</span>
+                  <input
+                    disabled={draftWindowsMode}
+                    onChange={(event) =>
+                      setDraftServiceName(service.role, event.target.value)
+                    }
+                    placeholder={service.name}
+                    value={service.name}
+                  />
+                </label>
+              ))}
+            </div>
+          </section>
 
           <label className="checkbox-field">
             <input
@@ -1018,68 +1415,161 @@ function App() {
       {!setupComplete ? (
         <div aria-modal="true" className="modal-backdrop" role="dialog">
           <div className="modal setup-modal">
-            <p className="eyebrow">first run</p>
-            <h2>XAMPP compatibility setup</h2>
-            <p>
-              Configure the folder StackPilot should treat like htdocs and the
-              project folder it should serve.
-            </p>
+            {setupStep === "preset" ? (
+              <>
+                <p className="eyebrow">first run</p>
+                <h2>Choose environment preset</h2>
+                <p>
+                  Select the closest local stack layout so StackPilot can set
+                  service names, project root defaults, and phpMyAdmin routing.
+                </p>
 
-            <label className="checkbox-field">
-              <input
-                checked={draftXamppMode}
-                onChange={(event) => setDraftXamppMode(event.target.checked)}
-                type="checkbox"
-              />
-              <span>Enable XAMPP compatibility mode</span>
-            </label>
+                <label className="checkbox-field">
+                  <input
+                    checked={draftWindowsMode}
+                    onChange={(event) =>
+                      applyPreset(event.target.checked ? "windows" : "fedora")
+                    }
+                    type="checkbox"
+                  />
+                  <span>Windows or XAMPP for Windows</span>
+                </label>
 
-            <label className="field">
-              <span>
-                {draftXamppMode
-                  ? "htdocs equivalent path"
-                  : "Project root path"}
-              </span>
-              <input
-                onChange={(event) => setDraftProjectRoot(event.target.value)}
-                placeholder={DEFAULT_PROJECT_ROOT}
-                value={draftProjectRoot}
-              />
-            </label>
+                {!draftWindowsMode ? (
+                  <div className="preset-grid">
+                    {STACK_PRESETS.filter(
+                      (preset) => preset.platform === "linux",
+                    ).map((preset) => (
+                      <button
+                        className={
+                          preset.id === draftDistroPreset
+                            ? "preset-card active"
+                            : "preset-card"
+                        }
+                        key={preset.id}
+                        onClick={() => applyPreset(preset.id)}
+                        type="button"
+                      >
+                        <span>{preset.name}</span>
+                        <small>{preset.description}</small>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="notice">
+                    Windows mode uses {getPreset("windows").projectRoot} and
+                    disables systemd controls.
+                  </p>
+                )}
 
-            <label className="field">
-              <span>Project folder name</span>
-              <input
-                disabled={!draftXamppMode}
-                onChange={(event) => setDraftProjectName(event.target.value)}
-                placeholder="my-project"
-                value={draftProjectName}
-              />
-            </label>
+                <div className="modal-actions">
+                  <button
+                    className="primary-button"
+                    onClick={() => {
+                      setSettingsNotice("");
+                      setSetupStep("project");
+                    }}
+                    type="button"
+                  >
+                    Continue
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="eyebrow">first run</p>
+                <h2>Project setup</h2>
+                <p>
+                  {draftPreset.name} preset selected. Confirm the project path,
+                  folder name, and service units before saving.
+                </p>
 
-            <label className="field">
-              <span>phpMyAdmin URL</span>
-              <input
-                onChange={(event) => setDraftPhpMyAdminUrl(event.target.value)}
-                placeholder={DEFAULT_PHPMYADMIN_URL}
-                value={draftPhpMyAdminUrl}
-              />
-            </label>
+                <label className="checkbox-field">
+                  <input
+                    checked={draftXamppMode}
+                    onChange={(event) =>
+                      setDraftXamppMode(event.target.checked)
+                    }
+                    type="checkbox"
+                  />
+                  <span>Enable XAMPP compatibility mode</span>
+                </label>
 
-            {settingsNotice ? <p className="notice">{settingsNotice}</p> : null}
+                <label className="field">
+                  <span>
+                    {draftXamppMode
+                      ? "htdocs equivalent path"
+                      : "Project root path"}
+                  </span>
+                  <input
+                    onChange={(event) =>
+                      setDraftProjectRoot(event.target.value)
+                    }
+                    placeholder={draftPreset.projectRoot}
+                    value={draftProjectRoot}
+                  />
+                </label>
 
-            <div className="modal-actions">
-              <button onClick={() => void completeSetup(false)} type="button">
-                Save Setup
-              </button>
-              <button
-                className="primary-button"
-                onClick={() => void completeSetup(true)}
-                type="button"
-              >
-                Save and Open Project
-              </button>
-            </div>
+                <label className="field">
+                  <span>Project folder name</span>
+                  <input
+                    disabled={!draftXamppMode}
+                    onChange={(event) =>
+                      setDraftProjectName(event.target.value)
+                    }
+                    placeholder="my-project"
+                    value={draftProjectName}
+                  />
+                </label>
+
+                <label className="field">
+                  <span>phpMyAdmin URL</span>
+                  <input
+                    onChange={(event) =>
+                      setDraftPhpMyAdminUrl(event.target.value)
+                    }
+                    placeholder={DEFAULT_PHPMYADMIN_URL}
+                    value={draftPhpMyAdminUrl}
+                  />
+                </label>
+
+                <div className="service-unit-grid">
+                  {draftServiceDefinitions.map((service) => (
+                    <label className="field" key={service.role}>
+                      <span>{service.label}</span>
+                      <input
+                        disabled={draftWindowsMode}
+                        onChange={(event) =>
+                          setDraftServiceName(service.role, event.target.value)
+                        }
+                        placeholder={service.name}
+                        value={service.name}
+                      />
+                    </label>
+                  ))}
+                </div>
+
+                {settingsNotice ? (
+                  <p className="notice">{settingsNotice}</p>
+                ) : null}
+
+                <div className="modal-actions">
+                  <button onClick={() => setSetupStep("preset")} type="button">
+                    Back
+                  </button>
+                  <button onClick={() => void completeSetup(false)} type="button">
+                    Save Setup
+                  </button>
+                  <button
+                    className="primary-button"
+                    onClick={() => void completeSetup(true)}
+                    type="button"
+                  >
+                    Save and Open Project
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       ) : pendingAction ? (
@@ -1088,7 +1578,7 @@ function App() {
             <p className="eyebrow">privileged command</p>
             <h2>
               {actionLabels[pendingAction.action]}{" "}
-              {serviceLabels[pendingAction.service]}?
+              {getServiceLabel(serviceDefinitions, pendingAction.service)}?
             </h2>
             <p>
               This will ask polkit for permission before changing the service
