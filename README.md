@@ -7,6 +7,9 @@ why?
 
 The goal is to provide a small native dashboard for the common tasks usually handled manually with `systemctl`, `journalctl`, and a browser.
 
+<img width="1920" height="1200" alt="image" src="https://github.com/user-attachments/assets/005064be-40a7-4966-804a-bf23612dfa99" />
+
+
 ## Features
 
 - Service status polling for `httpd`, `mariadb`, and `php-fpm`.
