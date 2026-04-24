@@ -579,6 +579,12 @@ function App() {
   }, [activeTheme.colorScheme, theme]);
 
   useEffect(() => {
+    if (!setupComplete) {
+      setStatuses([]);
+      setStatusError("");
+      return;
+    }
+
     void loadStatuses();
 
     const pollId = window.setInterval(() => {
@@ -586,7 +592,7 @@ function App() {
     }, POLL_INTERVAL_MS);
 
     return () => window.clearInterval(pollId);
-  }, [loadStatuses]);
+  }, [loadStatuses, setupComplete]);
 
   useEffect(() => {
     if (!serviceDefinitions.some((service) => service.name === selectedService)) {
@@ -595,10 +601,21 @@ function App() {
   }, [selectedService, serviceDefinitions]);
 
   useEffect(() => {
+    if (!setupComplete || !selectedService) {
+      setLogs("");
+      setLogsError("");
+      return;
+    }
+
     void loadLogs(selectedService);
-  }, [loadLogs, selectedService]);
+  }, [loadLogs, selectedService, setupComplete]);
 
   useEffect(() => {
+    if (!setupComplete) {
+      setProjectServer(getPreviewProjectServerStatus());
+      return;
+    }
+
     void loadProjectServerStatus();
 
     const pollId = window.setInterval(() => {
@@ -606,7 +623,7 @@ function App() {
     }, POLL_INTERVAL_MS);
 
     return () => window.clearInterval(pollId);
-  }, [loadProjectServerStatus]);
+  }, [loadProjectServerStatus, setupComplete]);
 
   async function runPendingAction() {
     if (!pendingAction) {
@@ -985,6 +1002,221 @@ function App() {
     setDraftXamppMode(false);
     setSettingsNotice("Settings reset to the default.");
     setOpenError("");
+  }
+
+  if (!setupComplete) {
+    return (
+      <main className="app-shell setup-shell">
+        <section aria-labelledby="setup-title" className="panel setup-screen">
+          <header className="setup-header">
+            <div>
+              <p className="eyebrow">first run</p>
+              <h1 id="setup-title">Set up StackPilot</h1>
+            </div>
+
+            <label className="theme-picker">
+              <span>Theme</span>
+              <select
+                aria-label="UI theme"
+                onChange={(event) => setTheme(event.target.value as ThemeId)}
+                value={theme}
+              >
+                {UI_THEMES.map((themeOption) => (
+                  <option key={themeOption.id} value={themeOption.id}>
+                    {themeOption.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </header>
+
+          <div className="setup-progress" aria-label="Setup progress">
+            <span className={setupStep === "preset" ? "active" : ""}>
+              Environment
+            </span>
+            <span className={setupStep === "project" ? "active" : ""}>
+              Project
+            </span>
+          </div>
+
+          {setupStep === "preset" ? (
+            <div className="setup-pane">
+              <div>
+                <p className="eyebrow">environment preset</p>
+                <h2>Choose your local stack</h2>
+                <p>
+                  This sets service unit names, the default project root, and
+                  whether StackPilot should use XAMPP-style behavior.
+                </p>
+              </div>
+
+              <label className="checkbox-field setup-checkbox">
+                <input
+                  checked={draftWindowsMode}
+                  onChange={(event) =>
+                    applyPreset(event.target.checked ? "windows" : "fedora")
+                  }
+                  type="checkbox"
+                />
+                <span>Windows or XAMPP for Windows</span>
+              </label>
+
+              {!draftWindowsMode ? (
+                <div className="preset-grid">
+                  {STACK_PRESETS.filter(
+                    (preset) => preset.platform === "linux",
+                  ).map((preset) => (
+                    <button
+                      className={
+                        preset.id === draftDistroPreset
+                          ? "preset-card active"
+                          : "preset-card"
+                      }
+                      key={preset.id}
+                      onClick={() => applyPreset(preset.id)}
+                      type="button"
+                    >
+                      <span>{preset.name}</span>
+                      <small>{preset.description}</small>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="notice">
+                  Windows mode uses {getPreset("windows").projectRoot} and
+                  disables systemd controls.
+                </p>
+              )}
+
+              <div className="modal-actions">
+                <button
+                  className="primary-button"
+                  onClick={() => {
+                    setSettingsNotice("");
+                    setSetupStep("project");
+                  }}
+                  type="button"
+                >
+                  Continue
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="setup-pane">
+              <div>
+                <p className="eyebrow">project setup</p>
+                <h2>{draftPreset.name} project settings</h2>
+                <p>
+                  Confirm the project path, folder name, phpMyAdmin URL, and
+                  service units before opening the dashboard.
+                </p>
+              </div>
+
+              <label className="checkbox-field setup-checkbox">
+                <input
+                  checked={draftXamppMode}
+                  onChange={(event) => {
+                    setDraftXamppMode(event.target.checked);
+                    setSettingsNotice("");
+                  }}
+                  type="checkbox"
+                />
+                <span>Enable XAMPP compatibility mode</span>
+              </label>
+
+              <div className="setup-fields">
+                <label className="field">
+                  <span>
+                    {draftXamppMode
+                      ? "htdocs equivalent path"
+                      : "Project root path"}
+                  </span>
+                  <input
+                    onChange={(event) => {
+                      setDraftProjectRoot(event.target.value);
+                      setSettingsNotice("");
+                    }}
+                    placeholder={draftPreset.projectRoot}
+                    value={draftProjectRoot}
+                  />
+                </label>
+
+                <label className="field">
+                  <span>Project folder name</span>
+                  <input
+                    disabled={!draftXamppMode}
+                    onChange={(event) => {
+                      setDraftProjectName(event.target.value);
+                      setSettingsNotice("");
+                    }}
+                    placeholder="my-project"
+                    value={draftProjectName}
+                  />
+                </label>
+
+                <label className="field">
+                  <span>phpMyAdmin URL</span>
+                  <input
+                    onChange={(event) => {
+                      setDraftPhpMyAdminUrl(event.target.value);
+                      setSettingsNotice("");
+                    }}
+                    placeholder={DEFAULT_PHPMYADMIN_URL}
+                    value={draftPhpMyAdminUrl}
+                  />
+                </label>
+              </div>
+
+              <section
+                className="settings-section"
+                aria-labelledby="setup-service-units-title"
+              >
+                <div>
+                  <p className="eyebrow">service map</p>
+                  <h3 id="setup-service-units-title">Service Unit Names</h3>
+                </div>
+
+                <div className="service-unit-grid">
+                  {draftServiceDefinitions.map((service) => (
+                    <label className="field" key={service.role}>
+                      <span>{service.label}</span>
+                      <input
+                        disabled={draftWindowsMode}
+                        onChange={(event) =>
+                          setDraftServiceName(service.role, event.target.value)
+                        }
+                        placeholder={service.name}
+                        value={service.name}
+                      />
+                    </label>
+                  ))}
+                </div>
+              </section>
+
+              {settingsNotice ? <p className="notice">{settingsNotice}</p> : null}
+              {openError ? <p className="notice error">{openError}</p> : null}
+
+              <div className="modal-actions">
+                <button onClick={() => setSetupStep("preset")} type="button">
+                  Back
+                </button>
+                <button onClick={() => void completeSetup(false)} type="button">
+                  Save Setup
+                </button>
+                <button
+                  className="primary-button"
+                  disabled={isProjectServerLoading}
+                  onClick={() => void completeSetup(true)}
+                  type="button"
+                >
+                  {isProjectServerLoading ? "Opening" : "Save and Open Project"}
+                </button>
+              </div>
+            </div>
+          )}
+        </section>
+      </main>
+    );
   }
 
   return (
@@ -1412,167 +1644,7 @@ function App() {
         </section>
       )}
 
-      {!setupComplete ? (
-        <div aria-modal="true" className="modal-backdrop" role="dialog">
-          <div className="modal setup-modal">
-            {setupStep === "preset" ? (
-              <>
-                <p className="eyebrow">first run</p>
-                <h2>Choose environment preset</h2>
-                <p>
-                  Select the closest local stack layout so StackPilot can set
-                  service names, project root defaults, and phpMyAdmin routing.
-                </p>
-
-                <label className="checkbox-field">
-                  <input
-                    checked={draftWindowsMode}
-                    onChange={(event) =>
-                      applyPreset(event.target.checked ? "windows" : "fedora")
-                    }
-                    type="checkbox"
-                  />
-                  <span>Windows or XAMPP for Windows</span>
-                </label>
-
-                {!draftWindowsMode ? (
-                  <div className="preset-grid">
-                    {STACK_PRESETS.filter(
-                      (preset) => preset.platform === "linux",
-                    ).map((preset) => (
-                      <button
-                        className={
-                          preset.id === draftDistroPreset
-                            ? "preset-card active"
-                            : "preset-card"
-                        }
-                        key={preset.id}
-                        onClick={() => applyPreset(preset.id)}
-                        type="button"
-                      >
-                        <span>{preset.name}</span>
-                        <small>{preset.description}</small>
-                      </button>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="notice">
-                    Windows mode uses {getPreset("windows").projectRoot} and
-                    disables systemd controls.
-                  </p>
-                )}
-
-                <div className="modal-actions">
-                  <button
-                    className="primary-button"
-                    onClick={() => {
-                      setSettingsNotice("");
-                      setSetupStep("project");
-                    }}
-                    type="button"
-                  >
-                    Continue
-                  </button>
-                </div>
-              </>
-            ) : (
-              <>
-                <p className="eyebrow">first run</p>
-                <h2>Project setup</h2>
-                <p>
-                  {draftPreset.name} preset selected. Confirm the project path,
-                  folder name, and service units before saving.
-                </p>
-
-                <label className="checkbox-field">
-                  <input
-                    checked={draftXamppMode}
-                    onChange={(event) =>
-                      setDraftXamppMode(event.target.checked)
-                    }
-                    type="checkbox"
-                  />
-                  <span>Enable XAMPP compatibility mode</span>
-                </label>
-
-                <label className="field">
-                  <span>
-                    {draftXamppMode
-                      ? "htdocs equivalent path"
-                      : "Project root path"}
-                  </span>
-                  <input
-                    onChange={(event) =>
-                      setDraftProjectRoot(event.target.value)
-                    }
-                    placeholder={draftPreset.projectRoot}
-                    value={draftProjectRoot}
-                  />
-                </label>
-
-                <label className="field">
-                  <span>Project folder name</span>
-                  <input
-                    disabled={!draftXamppMode}
-                    onChange={(event) =>
-                      setDraftProjectName(event.target.value)
-                    }
-                    placeholder="my-project"
-                    value={draftProjectName}
-                  />
-                </label>
-
-                <label className="field">
-                  <span>phpMyAdmin URL</span>
-                  <input
-                    onChange={(event) =>
-                      setDraftPhpMyAdminUrl(event.target.value)
-                    }
-                    placeholder={DEFAULT_PHPMYADMIN_URL}
-                    value={draftPhpMyAdminUrl}
-                  />
-                </label>
-
-                <div className="service-unit-grid">
-                  {draftServiceDefinitions.map((service) => (
-                    <label className="field" key={service.role}>
-                      <span>{service.label}</span>
-                      <input
-                        disabled={draftWindowsMode}
-                        onChange={(event) =>
-                          setDraftServiceName(service.role, event.target.value)
-                        }
-                        placeholder={service.name}
-                        value={service.name}
-                      />
-                    </label>
-                  ))}
-                </div>
-
-                {settingsNotice ? (
-                  <p className="notice">{settingsNotice}</p>
-                ) : null}
-
-                <div className="modal-actions">
-                  <button onClick={() => setSetupStep("preset")} type="button">
-                    Back
-                  </button>
-                  <button onClick={() => void completeSetup(false)} type="button">
-                    Save Setup
-                  </button>
-                  <button
-                    className="primary-button"
-                    onClick={() => void completeSetup(true)}
-                    type="button"
-                  >
-                    Save and Open Project
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      ) : pendingAction ? (
+      {pendingAction ? (
         <div aria-modal="true" className="modal-backdrop" role="dialog">
           <div className="modal">
             <p className="eyebrow">privileged command</p>

@@ -16,7 +16,7 @@ The goal is to provide a small native dashboard for the common tasks usually han
 - Project folder opening through the Tauri opener plugin.
 - Per-project preview server using `php -S 127.0.0.1:<port> -t <projectRoot>`.
 - First-run distro presets for Fedora, Arch, Ubuntu, Debian, and Windows/XAMPP.
-- First-run XAMPP compatibility setup for an htdocs-style root and project folder.
+- First-run setup screen for distro presets, XAMPP compatibility, and the project root before the dashboard opens.
 - Built-in phpMyAdmin shortcut, defaulting to `http://localhost/phpmyadmin`.
 - Theme selection with light, dark, terminal-style, block-style, and shadcn variants.
 - Linux AppImage and Windows installer release workflow through GitHub Actions.
@@ -199,7 +199,7 @@ Configuration:
 
 ## Distro Presets
 
-The first-run setup starts with an environment preset screen. Linux users can choose Fedora, Arch, Ubuntu, or Debian. Windows users can enable the Windows/XAMPP checkbox.
+The first-run setup opens as a dedicated setup screen before the dashboard starts polling services. Linux users can choose Fedora, Arch, Ubuntu, or Debian. Windows users can enable the Windows/XAMPP checkbox.
 
 Presets set the initial project root, phpMyAdmin URL, XAMPP mode, and service unit names:
 
