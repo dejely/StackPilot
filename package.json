@@ -1,14 +1,14 @@
 {
   "name": "stackpilot",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.3.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "appimage": "tauri build --bundles appimage"
+    "appimage": "NO_STRIP=1 tauri build --bundles appimage"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.10.1",

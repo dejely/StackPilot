@@ -1,6 +1,6 @@
 [package]
 name = "stackpilot"
-version = "0.1.0"
+version = "0.3.0"
 description = "A desktop control panel for a local LAMP stack"
 authors = ["you"]
 edition = "2021"

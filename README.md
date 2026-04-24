@@ -15,6 +15,9 @@ The goal is to provide a small native dashboard for the common tasks usually han
 - Configurable project root path.
 - Project folder opening through the Tauri opener plugin.
 - Per-project preview server using `php -S 127.0.0.1:<port> -t <projectRoot>`.
+- First-run distro presets for Fedora, Arch, Ubuntu, Debian, and Windows/XAMPP.
+- First-run XAMPP compatibility setup for an htdocs-style root and project folder.
+- Built-in phpMyAdmin shortcut, defaulting to `http://localhost/phpmyadmin`.
 - Theme selection with light, dark, terminal-style, block-style, and shadcn variants.
 - Linux AppImage and Windows installer release workflow through GitHub Actions.
 
@@ -27,6 +30,7 @@ Runtime requirements:
 - `pkexec` for privileged service actions.
 - `journalctl` for service log retrieval.
 - `php` on `PATH` for the project preview server.
+- A local phpMyAdmin installation if the phpMyAdmin shortcut is used.
 
 Development requirements:
 
@@ -43,12 +47,19 @@ sudo apt-get install -y \
   curl \
   file \
   libayatana-appindicator3-dev \
+  libfuse2 \
   librsvg2-dev \
   libssl-dev \
   libwebkit2gtk-4.1-dev \
   libxdo-dev \
   patchelf \
   wget
+```
+
+On Fedora, install the equivalent build packages through `dnf`. AppImage bundling also needs the FUSE runtime libraries:
+
+```bash
+sudo dnf install fuse fuse-libs
 ```
 
 ## Development
@@ -138,13 +149,21 @@ tauri build --bundles nsis
 Create a draft release by pushing a version tag:
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.3.0
+git push origin v0.3.0
 ```
 
 The Linux workflow also supports manual runs with a tag input. The Windows workflow is manual-only, so run it from GitHub Actions with the same tag if you want both artifacts attached to the same draft release.
 
 The Windows artifact is useful for installer packaging checks, but StackPilot's current service controls are Linux-specific. Windows service support would require separate backend commands.
+
+For local AppImage builds on newer Fedora releases, use:
+
+```bash
+pnpm run appimage
+```
+
+This script sets `NO_STRIP=1` before running Tauri. Fedora 43 system libraries can contain newer ELF sections such as `.relr.dyn`, and the `strip` binary bundled inside `linuxdeploy` may fail to process them.
 
 ## Architecture
 
@@ -168,8 +187,43 @@ Configuration:
 
 - Default project root: `/var/www/html`.
 - Saved project root key: `stackpilot.projectRoot`.
+- Saved project folder key: `stackpilot.projectName`.
+- Saved phpMyAdmin URL key: `stackpilot.phpMyAdminUrl`.
+- Saved distro preset key: `stackpilot.distroPreset`.
+- Saved service unit map key: `stackpilot.serviceUnits`.
+- Saved Windows mode key: `stackpilot.windowsMode`.
+- Saved XAMPP mode key: `stackpilot.xamppMode`.
+- First-run setup key: `stackpilot.setupComplete`.
 - Saved theme key: `stackpilot.theme`.
 - Tauri bundle configuration: `src-tauri/tauri.conf.json`.
+
+## Distro Presets
+
+The first-run setup starts with an environment preset screen. Linux users can choose Fedora, Arch, Ubuntu, or Debian. Windows users can enable the Windows/XAMPP checkbox.
+
+Presets set the initial project root, phpMyAdmin URL, XAMPP mode, and service unit names:
+
+- Fedora: `httpd`, `mariadb`, `php-fpm`, root `/var/www/html`.
+- Arch: `httpd`, `mariadb`, `php-fpm`, root `/srv/http`.
+- Ubuntu: `apache2`, `mariadb`, `php8.3-fpm`, root `/var/www/html`.
+- Debian: `apache2`, `mariadb`, `php8.2-fpm`, root `/var/www/html`.
+- Windows/XAMPP: root `C:\xampp\htdocs`, systemd controls disabled.
+
+The service unit names remain editable in Settings because PHP-FPM unit names vary by installed PHP version.
+
+## XAMPP Compatibility Mode
+
+On first launch, StackPilot asks for the local folder that should behave like `htdocs`, a project folder name, and a phpMyAdmin URL.
+
+When XAMPP compatibility mode is enabled:
+
+- The project root is treated as the htdocs equivalent.
+- Open Project Site serves `<htdocs>/<project-name>` with PHP's built-in server.
+- Open Project Root opens the htdocs equivalent folder.
+- StackPilot still shows the Apache-style route `http://localhost/<project-name>/` for reference.
+- The phpMyAdmin button opens the configured phpMyAdmin URL.
+
+This avoids Apache 404s when Fedora's `httpd` document root is still `/var/www/html` and the configured htdocs-equivalent folder lives elsewhere.
 
 ## Project Preview Server
 
@@ -185,11 +239,11 @@ Use Apache service controls for the system stack. Use Open Project Site for the 
 
 ## Known Limits
 
-- Service names are currently hard-coded to Fedora-style `httpd`, `mariadb`, and `php-fpm`.
+- Windows mode disables systemd service controls. Use XAMPP Control Panel or Windows services for stack-level actions on Windows.
 - Service management requires a desktop session where `pkexec` can prompt for authorization.
 - The browser-only Vite preview cannot access Tauri commands.
 - The project preview server uses PHP's built-in server and is intended for local development, not production hosting.
-- Windows release artifacts can be built, but service control behavior is currently Linux-only.
+- Linux service unit names are preset-based and editable. Invalid unit names are rejected before running `systemctl`.
 
 ## Repository Notes
 
@@ -199,4 +253,4 @@ Keep release-related changes synchronized between:
 - `src-tauri/tauri.conf.json`
 - `.github/workflows/release-appimage.yml`
 
-When changing service names, add them in both the frontend service definitions and Rust backend service list.
+When adding a new distro preset, update `STACK_PRESETS` in `src/App.tsx`. The Rust backend validates service unit names at runtime instead of keeping a distro-specific service list.
