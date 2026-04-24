@@ -1,9 +1,6 @@
-name: Release Linux AppImage
+name: Release Windows Installer
 
 on:
-  push:
-    tags:
-      - "v*"
   workflow_dispatch:
     inputs:
       tag:
@@ -15,9 +12,9 @@ permissions:
   contents: write
 
 jobs:
-  build-appimage:
-    name: Build Linux AppImage
-    runs-on: ubuntu-22.04
+  build-windows-installer:
+    name: Build Windows Installer
+    runs-on: windows-latest
 
     steps:
       - name: Checkout
@@ -38,34 +35,19 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install Tauri Linux dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            build-essential \
-            curl \
-            file \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            libssl-dev \
-            libwebkit2gtk-4.1-dev \
-            libxdo-dev \
-            patchelf \
-            wget
-
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build and upload AppImage
+      - name: Build and upload Windows installer
         uses: tauri-apps/tauri-action@v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
-          releaseName: "StackPilot ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"
-          releaseBody: "Linux AppImage build for StackPilot."
+          tagName: ${{ inputs.tag }}
+          releaseName: "StackPilot ${{ inputs.tag }}"
+          releaseBody: "Windows installer build for StackPilot."
           releaseDraft: true
           prerelease: false
           tauriScript: pnpm tauri
-          args: --bundles appimage
+          args: --bundles nsis
           releaseAssetNamePattern: "[name]-[version]-[platform]-[arch][ext]"
