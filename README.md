@@ -175,7 +175,12 @@ Frontend:
 - React 18.
 - Vite.
 - Theme metadata in `src/themes.ts`.
-- Main application UI in `src/App.tsx`.
+- Main application wiring in `src/App.tsx`.
+- Presentational UI components in `src/components/`.
+- Stack presets and storage/default constants in `src/config/`.
+- Stateful UI and Tauri command flows in `src/hooks/`.
+- Pure helpers for paths, services, and project server defaults in `src/lib/`.
+- Shared frontend data types in `src/types/`.
 - Styling in `src/App.css`.
 
 Backend:
